@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 st.set_page_config(layout="wide")
 
-# Set up proper file path for deployment
+# Set base path and file location
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -19,16 +19,19 @@ columns = [
     "Invoice Date", "Vehicle", "Out Time", "In Time", "Out KM", "In KM", "Diff in KM"
 ]
 
+# ✅ Create valid Excel file on first run
 def load_data():
-    if os.path.exists(DATA_FILE):
-        all_data = pd.DataFrame(columns=columns)
-        xls = pd.ExcelFile(DATA_FILE, engine='openpyxl')  # Force Excel engine
-        for sheet in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sheet)
-            all_data = pd.concat([all_data, df], ignore_index=True)
-        return all_data
-    else:
-        return pd.DataFrame(columns=columns)
+    if not os.path.exists(DATA_FILE):
+        with pd.ExcelWriter(DATA_FILE, engine='openpyxl') as writer:
+            for drv in drivers:
+                pd.DataFrame(columns=columns).to_excel(writer, sheet_name=drv, index=False)
+
+    all_data = pd.DataFrame(columns=columns)
+    xls = pd.ExcelFile(DATA_FILE, engine='openpyxl')
+    for sheet in xls.sheet_names:
+        df = pd.read_excel(xls, sheet_name=sheet)
+        all_data = pd.concat([all_data, df], ignore_index=True)
+    return all_data
 
 def save_to_driver_sheet(driver, df):
     if os.path.exists(DATA_FILE):
@@ -38,7 +41,7 @@ def save_to_driver_sheet(driver, df):
             book.remove(std)
         book.save(DATA_FILE)
 
-    with pd.ExcelWriter(DATA_FILE, engine='openpyxl', mode='a' if os.path.exists(DATA_FILE) else 'w') as writer:
+    with pd.ExcelWriter(DATA_FILE, engine='openpyxl', mode='a') as writer:
         df.to_excel(writer, sheet_name=driver, index=False)
 
 def is_valid_time_format(t):
@@ -130,4 +133,5 @@ if not filtered_df.empty:
     st.download_button("⬇️ Download All Trip Data", data=buffer, file_name="trip_data.xlsx")
 else:
     st.info("No records found for this driver.")
+
 
