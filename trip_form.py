@@ -1,57 +1,72 @@
 import streamlit as st
 import pandas as pd
-import os
+import sqlite3
 import io
-from datetime import datetime, time, timedelta
-from openpyxl import load_workbook
+import os
 
 st.set_page_config(layout="wide")
-DATA_FILE = "data/trip_data.xlsx"
+DB_FILE = "data/trips.db"
+
+# Ensure data folder exists
 os.makedirs("data", exist_ok=True)
 
+# Driver list
 drivers = ["Prem", "Ajith", "Wilson"]
+
+# Columns of the trips table
 columns = [
-    "S.No.", "Driver", "Disp Date", "Invoice No", "Customer", "Destination",
-    "Invoice Date", "Vehicle", "Out Time", "In Time", "Out KM", "In KM", "Diff in KM"
+    "SNo", "Driver", "DispDate", "InvoiceNo", "Customer", "Destination",
+    "InvoiceDate", "Vehicle", "OutTime", "InTime", "OutKM", "InKM", "DiffKM"
 ]
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        all_data = pd.DataFrame(columns=columns)
-        xls = pd.ExcelFile(DATA_FILE, engine='openpyxl')
-        for sheet in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sheet)
-            all_data = pd.concat([all_data, df], ignore_index=True)
-        return all_data
+# Initialize SQLite connection and create table if not exists
+conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+c = conn.cursor()
+c.execute('''
+CREATE TABLE IF NOT EXISTS trips (
+    SNo INTEGER PRIMARY KEY AUTOINCREMENT,
+    Driver TEXT,
+    DispDate TEXT,
+    InvoiceNo TEXT,
+    Customer TEXT,
+    Destination TEXT,
+    InvoiceDate TEXT,
+    Vehicle TEXT,
+    OutTime TEXT,
+    InTime TEXT,
+    OutKM INTEGER,
+    InKM INTEGER,
+    DiffKM INTEGER
+)
+''')
+conn.commit()
+
+def add_trip(data):
+    c.execute('''
+        INSERT INTO trips (
+            Driver, DispDate, InvoiceNo, Customer, Destination,
+            InvoiceDate, Vehicle, OutTime, InTime, OutKM, InKM, DiffKM
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', data)
+    conn.commit()
+
+def get_trips(driver=None):
+    if driver and driver != "All":
+        c.execute("SELECT * FROM trips WHERE Driver = ?", (driver,))
     else:
-        return pd.DataFrame(columns=columns)
+        c.execute("SELECT * FROM trips")
+    rows = c.fetchall()
+    df = pd.DataFrame(rows, columns=columns)
+    return df
 
-def save_to_driver_sheet(driver, df):
-    if os.path.exists(DATA_FILE):
-        book = load_workbook(DATA_FILE)
-        if driver in book.sheetnames:
-            del book[driver]
-        book.save(DATA_FILE)
+def delete_trip(sno):
+    c.execute("DELETE FROM trips WHERE SNo = ?", (sno,))
+    conn.commit()
 
-    with pd.ExcelWriter(DATA_FILE, engine='openpyxl', mode='a' if os.path.exists(DATA_FILE) else 'w') as writer:
-        df.to_excel(writer, sheet_name=driver, index=False)
-
-def generate_time_options():
-    # Generate times from 00:00 to 23:45 in 15-min intervals
-    times = []
-    current = datetime.strptime("00:00", "%H:%M")
-    end = datetime.strptime("23:45", "%H:%M")
-    while current <= end:
-        times.append(current.strftime("%H:%M"))
-        current += timedelta(minutes=15)
-    return times
-
+# Title
 st.title("🚛 Trip Entry Form")
 
-df = load_data()
-
-time_options = generate_time_options()
-
+# --- Add Trip Form ---
 st.subheader("➕ Add Trip Record")
 with st.form("trip_form"):
     selected_driver = st.selectbox("Driver", drivers)
@@ -64,62 +79,64 @@ with st.form("trip_form"):
     inv_date = col2.date_input("Invoice Date")
     vehicle = col3.text_input("Vehicle")
 
-    out_time = col1.selectbox("Out Time", options=time_options)
-    in_time = col2.selectbox("In Time", options=time_options)
+    # OutTime and InTime dropdown (15-min increments)
+    times = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0,15,30,45)]
+    out_time = col1.selectbox("Out Time", times)
+    in_time = col2.selectbox("In Time", times)
 
-    out_km = col3.number_input("Out KM", 0)
-    in_km = col1.number_input("In KM", 0)
+    out_km = col3.number_input("Out KM", min_value=0, step=1)
+    in_km = col1.number_input("In KM", min_value=0, step=1)
     diff_km = in_km - out_km if in_km >= out_km else 0
 
     submitted = st.form_submit_button("Submit")
 
     if submitted:
-        # No need to validate time format because dropdown guarantees correct format
-        driver_df = df[df["Driver"] == selected_driver].copy()
-        new_row = [
-            len(driver_df) + 1,
+        data = (
             selected_driver,
-            disp_date,
+            disp_date.strftime("%Y-%m-%d"),
             inv_no,
             customer,
             destination,
-            inv_date,
+            inv_date.strftime("%Y-%m-%d"),
             vehicle,
             out_time,
             in_time,
             out_km,
             in_km,
             diff_km
-        ]
-        new_entry = pd.DataFrame([new_row], columns=columns)
-        driver_df = pd.concat([driver_df, new_entry], ignore_index=True)
-        save_to_driver_sheet(selected_driver, driver_df)
+        )
+        add_trip(data)
         st.success(f"✅ Trip added for {selected_driver}")
-        df = load_data()
 
+# --- View Trips ---
 st.subheader("📋 View Trips")
-driver_filter = st.selectbox("Select Driver to View", drivers)
-filtered_df = df[df["Driver"] == driver_filter]
+driver_filter = st.selectbox("Select Driver to View", ["All"] + drivers)
+df = get_trips(driver_filter)
 
-if not filtered_df.empty:
-    st.dataframe(filtered_df, use_container_width=True)
+if not df.empty:
+    st.dataframe(df.drop(columns=["SNo"]), use_container_width=True)
 
-    delete_index = st.number_input("Enter S.No. to Delete", min_value=1, step=1)
+    sno_to_delete = st.number_input("Enter S.No. to Delete", min_value=1, step=1)
     if st.button("🗑 Delete Trip"):
-        filtered_df = filtered_df[filtered_df["S.No."] != delete_index]
-        filtered_df.reset_index(drop=True, inplace=True)
-        filtered_df["S.No."] = range(1, len(filtered_df) + 1)
-        save_to_driver_sheet(driver_filter, filtered_df)
-        st.success(f"🗑 Trip deleted from {driver_filter}'s sheet.")
-        df = load_data()
+        delete_trip(sno_to_delete)
+        st.success(f"🗑 Deleted trip S.No. {sno_to_delete}")
+        st.experimental_rerun()
 
+    # Generate Excel file for download
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        # Save all drivers in separate sheets
         for drv in drivers:
-            temp_df = df[df["Driver"] == drv]
-            if not temp_df.empty:
-                temp_df.to_excel(writer, sheet_name=drv, index=False)
+            drv_df = get_trips(drv)
+            if not drv_df.empty:
+                drv_df.drop(columns=["SNo"]).to_excel(writer, sheet_name=drv, index=False)
     buffer.seek(0)
-    st.download_button("⬇️ Download All Trip Data", data=buffer, file_name="trip_data.xlsx")
+
+    st.download_button(
+        "⬇️ Download All Trip Data (Excel)",
+        data=buffer,
+        file_name="trip_data.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 else:
     st.info("No records found for this driver.")
