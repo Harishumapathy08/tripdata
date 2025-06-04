@@ -31,16 +31,19 @@ def save_to_driver_sheet(driver, df):
     if os.path.exists(DATA_FILE):
         book = load_workbook(DATA_FILE)
         if driver in book.sheetnames:
-            del book[driver]
+            std = book[driver]
+            book.remove(std)
         book.save(DATA_FILE)
 
     with pd.ExcelWriter(DATA_FILE, engine='openpyxl', mode='a' if os.path.exists(DATA_FILE) else 'w') as writer:
         df.to_excel(writer, sheet_name=driver, index=False)
 
-def validate_time(t):
-    # Regex to match 12-hour format with AM/PM, e.g., 2:30 PM, 12:45 am
-    pattern = r'^(0?[1-9]|1[0-2]):[0-5][0-9]\s?(AM|PM|am|pm)$'
-    return re.match(pattern, t.strip()) is not None
+def format_time(t):
+    hour = t // 100
+    minute = t % 100
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02}:{minute:02}"
 
 st.title("🚛 Trip Entry Form")
 
@@ -58,8 +61,11 @@ with st.form("trip_form"):
     inv_date = col2.date_input("Invoice Date")
     vehicle = col3.text_input("Vehicle")
 
-    out_time = col1.text_input("Out Time (e.g., 02:30 PM)")
-    in_time = col2.text_input("In Time (e.g., 05:45 AM)")
+    out_time_raw = col1.number_input("Out Time (e.g., 1430)", min_value=0, max_value=2359, step=1)
+    in_time_raw = col2.number_input("In Time (e.g., 545)", min_value=0, max_value=2359, step=1)
+
+    out_time = format_time(out_time_raw)
+    in_time = format_time(in_time_raw)
 
     out_km = col3.number_input("Out KM", 0)
     in_km = col1.number_input("In KM", 0)
@@ -68,10 +74,10 @@ with st.form("trip_form"):
     submitted = st.form_submit_button("Submit")
 
     if submitted:
-        if not validate_time(out_time):
-            st.error("Out Time format is invalid. Use hh:mm AM/PM format.")
-        elif not validate_time(in_time):
-            st.error("In Time format is invalid. Use hh:mm AM/PM format.")
+        if out_time is None:
+            st.error("Out Time is invalid. Make sure it is in HHMM format and minutes < 60.")
+        elif in_time is None:
+            st.error("In Time is invalid. Make sure it is in HHMM format and minutes < 60.")
         else:
             driver_df = df[df["Driver"] == selected_driver].copy()
             new_row = [
@@ -83,8 +89,8 @@ with st.form("trip_form"):
                 destination,
                 inv_date,
                 vehicle,
-                out_time.strip(),
-                in_time.strip(),
+                out_time,
+                in_time,
                 out_km,
                 in_km,
                 diff_km
@@ -104,12 +110,15 @@ if not filtered_df.empty:
 
     delete_index = st.number_input("Enter S.No. to Delete", min_value=1, step=1)
     if st.button("🗑 Delete Trip"):
-        filtered_df = filtered_df[filtered_df["S.No."] != delete_index]
-        filtered_df.reset_index(drop=True, inplace=True)
-        filtered_df["S.No."] = range(1, len(filtered_df) + 1)
-        save_to_driver_sheet(driver_filter, filtered_df)
-        st.success(f"🗑 Trip deleted from {driver_filter}'s sheet.")
-        df = load_data()
+        if delete_index not in filtered_df["S.No."].values:
+            st.error("Invalid S.No. entered for deletion.")
+        else:
+            filtered_df = filtered_df[filtered_df["S.No."] != delete_index]
+            filtered_df.reset_index(drop=True, inplace=True)
+            filtered_df["S.No."] = range(1, len(filtered_df) + 1)
+            save_to_driver_sheet(driver_filter, filtered_df)
+            st.success(f"🗑 Trip deleted from {driver_filter}'s sheet.")
+            df = load_data()
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -121,4 +130,3 @@ if not filtered_df.empty:
     st.download_button("⬇️ Download All Trip Data", data=buffer, file_name="trip_data.xlsx")
 else:
     st.info("No records found for this driver.")
-
