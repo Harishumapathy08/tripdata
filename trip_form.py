@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime, time
+from io import BytesIO
 
 # --- DB SETUP ---
 conn = sqlite3.connect("data/trips.db", check_same_thread=False)
@@ -29,7 +30,6 @@ conn.commit()
 # --- CONSTANTS ---
 drivers = ["Prem", "Ajith", "Wilson"]
 
-# Generate time options in 15 min increments with AM/PM display
 def generate_time_options():
     times = []
     for hour in range(0, 24):
@@ -162,12 +162,11 @@ else:
 
         # --- Download Excel ---
         def convert_df_to_excel(df_export):
-            output = pd.ExcelWriter("data/temp_trip_export.xlsx", engine='openpyxl')
-            df_export.to_excel(output, index=False, sheet_name="Trips")
-            output.save()
-            output.close()
-            with open("data/temp_trip_export.xlsx", "rb") as f:
-                return f.read()
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name="Trips")
+            output.seek(0)
+            return output.read()
 
         excel_data = convert_df_to_excel(filtered_df[cols_to_show].drop(columns=["S.No."]))
 
