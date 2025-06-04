@@ -118,9 +118,10 @@ if not df.empty:
 
     sno_to_delete = st.number_input("Enter S.No. to Delete", min_value=1, step=1)
     if st.button("🗑 Delete Trip"):
-        delete_trip(sno_to_delete)
-        st.success(f"🗑 Deleted trip S.No. {sno_to_delete}")
-        st.experimental_rerun()
+    delete_trip(sno_to_delete)
+    st.success(f"🗑 Deleted trip S.No. {sno_to_delete}")
+    st.stop()
+
 
     # Generate Excel file for download
     buffer = io.BytesIO()
