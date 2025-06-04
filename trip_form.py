@@ -6,8 +6,12 @@ from datetime import datetime
 from openpyxl import load_workbook
 
 st.set_page_config(layout="wide")
-DATA_FILE = "data/trip_data.xlsx"
-os.makedirs("data", exist_ok=True)
+
+# Set up proper file path for deployment
+BASE_DIR = os.path.dirname(__file__)
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DATA_FILE = os.path.join(DATA_DIR, "trip_data.xlsx")
 
 drivers = ["Prem", "Ajith", "Wilson"]
 columns = [
@@ -18,7 +22,7 @@ columns = [
 def load_data():
     if os.path.exists(DATA_FILE):
         all_data = pd.DataFrame(columns=columns)
-        xls = pd.ExcelFile(DATA_FILE)
+        xls = pd.ExcelFile(DATA_FILE, engine='openpyxl')  # Force Excel engine
         for sheet in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=sheet)
             all_data = pd.concat([all_data, df], ignore_index=True)
@@ -126,3 +130,4 @@ if not filtered_df.empty:
     st.download_button("⬇️ Download All Trip Data", data=buffer, file_name="trip_data.xlsx")
 else:
     st.info("No records found for this driver.")
+
