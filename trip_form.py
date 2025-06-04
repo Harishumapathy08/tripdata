@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-import re
 from datetime import datetime
 from openpyxl import load_workbook
 
@@ -38,12 +37,12 @@ def save_to_driver_sheet(driver, df):
     with pd.ExcelWriter(DATA_FILE, engine='openpyxl', mode='a' if os.path.exists(DATA_FILE) else 'w') as writer:
         df.to_excel(writer, sheet_name=driver, index=False)
 
-def format_time(t):
-    hour = t // 100
-    minute = t % 100
-    if hour > 23 or minute > 59:
-        return None
-    return f"{hour:02}:{minute:02}"
+def is_valid_time_format(t):
+    try:
+        datetime.strptime(t.strip(), "%H:%M")
+        return True
+    except ValueError:
+        return False
 
 st.title("🚛 Trip Entry Form")
 
@@ -61,11 +60,8 @@ with st.form("trip_form"):
     inv_date = col2.date_input("Invoice Date")
     vehicle = col3.text_input("Vehicle")
 
-    out_time_raw = col1.number_input("Out Time (e.g., 1430)", min_value=0, max_value=2359, step=1)
-    in_time_raw = col2.number_input("In Time (e.g., 545)", min_value=0, max_value=2359, step=1)
-
-    out_time = format_time(out_time_raw)
-    in_time = format_time(in_time_raw)
+    out_time = col1.text_input("Out Time (24-hr format, e.g., 14:30)")
+    in_time = col2.text_input("In Time (24-hr format, e.g., 08:45)")
 
     out_km = col3.number_input("Out KM", 0)
     in_km = col1.number_input("In KM", 0)
@@ -74,10 +70,10 @@ with st.form("trip_form"):
     submitted = st.form_submit_button("Submit")
 
     if submitted:
-        if out_time is None:
-            st.error("Out Time is invalid. Make sure it is in HHMM format and minutes < 60.")
-        elif in_time is None:
-            st.error("In Time is invalid. Make sure it is in HHMM format and minutes < 60.")
+        if not is_valid_time_format(out_time):
+            st.error("❌ Out Time is invalid. Use HH:MM format (24-hour). Example: 14:30")
+        elif not is_valid_time_format(in_time):
+            st.error("❌ In Time is invalid. Use HH:MM format (24-hour). Example: 08:45")
         else:
             driver_df = df[df["Driver"] == selected_driver].copy()
             new_row = [
@@ -89,8 +85,8 @@ with st.form("trip_form"):
                 destination,
                 inv_date,
                 vehicle,
-                out_time,
-                in_time,
+                out_time.strip(),
+                in_time.strip(),
                 out_km,
                 in_km,
                 diff_km
