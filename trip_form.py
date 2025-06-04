@@ -138,12 +138,11 @@ else:
     st.dataframe(df_display[cols_to_show], use_container_width=True)
 
     sno_to_delete = st.number_input("Enter S.No. to Delete", min_value=1, max_value=len(df_display), step=1)
-    if st.button("🗑 Delete Trip"):
-        # Map S.No to actual DB id
-        trip_id = int(df_display.loc[df_display["S.No."] == sno_to_delete, "id"].values[0])
-        delete_trip_by_id(trip_id)
-        st.success(f"🗑 Deleted trip S.No. {sno_to_delete}")
-        st.experimental_rerun()
+if st.button("🗑 Delete Trip"):
+    delete_trip(sno_to_delete)
+    st.success(f"🗑 Deleted trip S.No. {sno_to_delete}")
+    st.stop()
+
 
     # Download button - export all trips to Excel
     df_all = fetch_trips()
